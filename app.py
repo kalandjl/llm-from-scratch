@@ -1,8 +1,6 @@
-import gradio as gr
-import random
-
 # Dataset: source code for 'requests' python libraray
 text = open("data/requests.txt").read()
+
 import numpy as np
 
 # sorted list of all unique characters in the text
@@ -21,13 +19,13 @@ decode = lambda l: ''.join([itos[i] for i in l])
 
 # encode the entire text file and convert to a numpy array
 data = np.array(encode(text))
-import numpy as np
 
-# Each character has weights of a 32 long vector, defined by n_embed (embedding dimension)
-n_embd = 32
+import numpy as np
 
 # Max input sequence length
 max_seq_len = 1000
+
+n_embd = 64
 
 # Initialize embedding matrix
 embedding_matrix = np.random.randn(vocab_size, n_embd)
@@ -35,7 +33,7 @@ embedding_matrix = np.random.randn(vocab_size, n_embd)
 def cross_entropy_loss(y_pred, y_true):
 
     # Add a small epsilon to the prediction to avoid log(0), which is undefined.
-    epsilon = 1e-9
+    epsilon = 1e-6
     
     # cross-entropy formula
     loss = -np.sum(y_true * np.log(y_pred + epsilon))
@@ -71,16 +69,20 @@ class self_attention_block:
         self.cache['values'] = values
 
         # Make key query attention pattern
-        # Divide by sqrt of dimension for numerical stability
         attention_scores = (queries @ keys.transpose(0, 2, 1)) / np.sqrt(keys.shape[-1])
         self.cache['attention_scores'] = attention_scores
-
-        # Causal mask
-        mask = np.tril(np.ones((T, T))) == 0  # Upper triangle is True
-        attention_scores[:, mask] = -np.inf  # Apply mask to all batches
-
+        
+        # Create mask once
+        if not hasattr(self, '_mask') or self._mask.shape != (T, T):
+            self._mask = np.triu(np.ones((T, T)), k=1).astype(bool)
+        
+        # Apply mask more efficiently
+        attention_scores_masked = attention_scores.copy()
+        for b in range(B):  # Apply mask to each batch
+            attention_scores_masked[b, self._mask] = -np.inf
+        
         # softmax
-        stable_scores = attention_scores - np.max(attention_scores, axis=-1, keepdims=True)
+        stable_scores = attention_scores_masked - np.max(attention_scores_masked, axis=-1, keepdims=True)
         attention_weights = np.exp(stable_scores) / np.sum(np.exp(stable_scores), axis=-1, keepdims=True)
         self.cache['attn_weights'] = attention_weights
         
@@ -231,9 +233,7 @@ class LayerNorm:
 
     
     def backward (self, d_output):
-        """
-        Calculates the gradients for gamma, beta, and the input x.
-        """
+
         # Calculate gradients for gamma and beta
         # These are summed over the batch and time dimensions to match the parameter shapes
         self.beta_grad = np.sum(d_output, axis=(0,1))
@@ -260,7 +260,6 @@ class LayerNorm:
         
         self.gamma -= (self.gamma_grad * learning_rate)
         self.beta -= (self.beta_grad * learning_rate)
-
 
 class Transformer:
     def __init__ (self, W1, W2, n_attn_heads, n_embd):
@@ -360,14 +359,12 @@ class Transformer:
         d_W = x_reshaped.T @ dy_reshaped
 
         return d_W, d_x
-        
 
 class Model:
-    def __init__(self,embedding_matrix, temperature=1.0, max_sequence_length=1000, n_embd=32, n_transformers=2, ffwd_expansion_factor=4):
+    def __init__(self,embedding_matrix, temperature=1.0, max_sequence_length=1000, n_embd=64, n_transformers=6, ffwd_expansion_factor=4):
 
         # Initialize weight matrices
         self.embedding_matrix = embedding_matrix
-        self.unembedding_matrix = embedding_matrix.transpose()
         self.position_matrix = np.random.randn(max_sequence_length, n_embd)
 
         # Hidden layer initialization functions
@@ -382,7 +379,7 @@ class Model:
             W2 = np.random.randn(n_embd * ffwd_expansion_factor, n_embd) * np.sqrt(2.0 / (n_embd * ffwd_expansion_factor))
 
             # Append transformer
-            self.transformers.append(Transformer(W1, W2, n_attn_heads=4, n_embd=n_embd))
+            self.transformers.append(Transformer(W1, W2, n_attn_heads=8, n_embd=n_embd))
 
         self.cache = {} # A dictionary to store forward pass values
 
@@ -425,7 +422,7 @@ class Model:
             
         self.cache['transformer_output'] = transformer_output
         
-        logits = transformer_output @ self.unembedding_matrix
+        logits = transformer_output @ self.embedding_matrix.T
 
         return logits
 
@@ -487,14 +484,25 @@ class Model:
 
     def backward (self, d_logits):
 
-        # unembedding layer
-        grad_unembed, d_transformer_output = self.linear_backward(
-            d_logits, 
-            self.unembedding_matrix, 
-            self.cache['transformer_output']
-        )
-        self.embedding_matrix_grad = grad_unembed.transpose()
-    
+        # Reset gradients at start of backward pass
+        self.embedding_matrix_grad.fill(0)
+        self.position_matrix_grad.fill(0)
+        
+        # Unembedding layer - handle tied weights correctly
+        d_transformer_output = d_logits @ self.embedding_matrix  # gradient w.r.t transformer output
+
+        transformer_output = self.cache['transformer_output']
+        
+        # Gradient w.r.t embedding matrix from unembedding (transposed)
+        B, T, n_embd = transformer_output.shape
+        transformer_output_flat = transformer_output.reshape(-1, n_embd)  # Shape: (B*T, n_embd)
+        d_logits_flat = d_logits.reshape(-1, d_logits.shape[-1])  # Shape: (B*T, vocab_size)
+        
+        unembedding_grad = transformer_output_flat.T @ d_logits_flat
+        
+        # Add unembedding gradient to embedding matrix gradients
+        self.embedding_matrix_grad += unembedding_grad.T
+        
         # Loop in reverse order through transformers
         current_grad = d_transformer_output
         
@@ -510,7 +518,6 @@ class Model:
         
         # Update position matrix gradients
         B, T = self.cache['x_batch'].shape
-        self.position_matrix_grad = np.zeros_like(self.position_matrix)
         self.position_matrix_grad[:T] += np.sum(d_pos, axis=0)  # Sum over batch dimension
     
         # Perform reverse lookup on embedding array
@@ -524,8 +531,10 @@ class Model:
         for transformer in self.transformers:
             transformer.optimizer(learning_rate)
 
-# Keep only this single model initialization:
-model = Model(embedding_matrix, temperature=1.0, max_sequence_length=1000, n_embd=32, n_transformers=2, ffwd_expansion_factor=4)
+model = Model(embedding_matrix)
+# Get next character predictions for 'd'
+logits = model.forward([[stoi['a'], stoi['p']]])
+model.pred([int(stoi['r'])])
 
 # Load the saved weights
 loaded_weights = np.load('my_model.npz')
@@ -539,7 +548,7 @@ model.embedding_matrix = loaded_weights["embedding_matrix"]
 model.position_matrix = loaded_weights["position_matrix"]
 print("✓ Loaded main matrices")
 
-# Load transformer weights (now we have exactly 2 transformers)
+# Load transformer weights (now we have exactly 6 transformers)
 for idx, transformer in enumerate(model.transformers):
     print(f"Loading transformer {idx}...")
     

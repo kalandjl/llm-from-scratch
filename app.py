@@ -685,8 +685,3 @@ async def predict_image(data: ReqData):
         raise HTTPException(status_code=400, detail=f"Failed to get model generation: {e}")
 
     return {"generation": generation}
-
-# Run fastapi server
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=4000)

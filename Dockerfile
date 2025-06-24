@@ -12,4 +12,4 @@ RUN pip install --no-cache-dir fastapi uvicorn numpy gradio
 EXPOSE 4000
 
 # Run FastAPI app
-CMD ["python", "app.py"]
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "4000"]

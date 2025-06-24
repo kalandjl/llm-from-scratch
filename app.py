@@ -634,4 +634,9 @@ with gr.Blocks(theme=gr.themes.Soft()) as app:
         api_name="generate"
     )
 
-app.launch(server_name="0.0.0.0", server_port=3000, share=False)
+app.launch(
+    server_name="0.0.0.0", 
+    server_port=4000, 
+    share=False,
+    allowed_paths=["*"],  # Allow CORS
+)

@@ -1,7 +1,7 @@
 
 export const getGeneration = async (prompt: string, temperature: number, heatMap: boolean, length: number) => {
 
-    const url = "http://localhost:4000/generate";
+    const url = "https://kalandjl-leanai-api.hf.space/generate";
 
     try {
         const response = await fetch(url, {

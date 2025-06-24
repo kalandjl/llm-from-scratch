@@ -1,7 +1,7 @@
 
 export const getGeneration = async (prompt: string, temperature: number, heatMap: boolean, length: number) => {
 
-    const url = "http://localhost:4000/api/generate"
+    const url = "http://localhost:4000/generate";
 
     try {
         const response = await fetch(url, {
@@ -10,7 +10,10 @@ export const getGeneration = async (prompt: string, temperature: number, heatMap
                 "Content-Type": "application/json",
             },
             body: JSON.stringify({
-                data: [prompt, temperature, length] 
+                'prompt': prompt, 
+                'temperature': temperature, 
+                'heatMap': heatMap, 
+                'length': length
             })
         });
 
@@ -21,10 +24,11 @@ export const getGeneration = async (prompt: string, temperature: number, heatMap
         const result = await response.json();
         
         // Gradio returns result in data array
-        return result.data[0]; // The generated text
+        return result.generation // The generated text
     } catch (error) {
 
         console.error("Error calling generation API:", error)
         throw error
     }
 }
+

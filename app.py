@@ -591,7 +591,7 @@ loss_initial, probabilities = model.calc_loss(logits, y_batch)
 
 print(loss_initial)
 
-def generate_text(prompt, temperature, max_length):
+def generate_text(prompt, temperature, heatMap, max_length):
     print(f"Generating with prompt: '{prompt}', temp: {temperature}, length: {max_length}")
     
     if not prompt:
@@ -634,9 +634,59 @@ with gr.Blocks(theme=gr.themes.Soft()) as app:
         api_name="generate"
     )
 
-app.launch(
-    server_name="0.0.0.0", 
-    server_port=4000, 
-    share=False,
-    allowed_paths=["*"],  # Allow CORS
+#app.launch(
+    #server_name="0.0.0.0", 
+    #server_port=4000, 
+    #share=False,
+    #allowed_paths=["*"],  # Allow CORS
+#)
+
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+
+app = FastAPI()
+
+port=4000
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
+
+from pydantic import BaseModel
+
+# Define request body
+class ReqData(BaseModel):
+    prompt: str
+    temperature: float
+    heatMap: bool
+    length: int
+
+
+# Root endpoint
+@app.get("/")
+def root():
+    return {"message": "Model is live!"}
+
+@app.post("/generate")
+async def predict_image(data: ReqData):
+
+    prompt = data.prompt
+    temperature = data.temperature
+    heatMap = data.heatMap
+    length = data.length
+
+    try:
+        generation = generate_text(prompt, temperature, heatMap, length)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to get model generation: {e}")
+
+    return {"generation": generation}
+
+# Run fastapi server
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=4000)

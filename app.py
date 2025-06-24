@@ -612,41 +612,12 @@ def generate_text(prompt, temperature, heatMap, max_length):
     generated_text = decode(char_indices)
     return generated_text
 
-with gr.Blocks(theme=gr.themes.Soft()) as app:
-    gr.Markdown("<h1>From-Scratch Transformer Text Generation</h1>")
-    gr.Markdown(
-        "This is a live demo of a multi-layer Transformer model built from scratch in NumPy. "
-        "It was trained on the source code of the 'requests' Python library. "
-    )
-    with gr.Row():
-        with gr.Column():
-            prompt_input = gr.Textbox(label="Initial Prompt", placeholder="e.g., def get_request(", lines=3)
-            temp_slider = gr.Slider(minimum=0.1, maximum=1.5, value=0.9, step=0.1, label="Temperature")
-            len_slider = gr.Slider(minimum=50, maximum=1000, value=500, step=50, label="Generation Length")
-            submit_btn = gr.Button("Generate", variant="primary")
-        with gr.Column():
-            output_text = gr.Textbox(label="Generated Code", lines=15, interactive=False)
-
-    submit_btn.click(
-        fn=generate_text,
-        inputs=[prompt_input, temp_slider, len_slider],
-        outputs=output_text,
-        api_name="generate"
-    )
-
-#app.launch(
-    #server_name="0.0.0.0", 
-    #server_port=4000, 
-    #share=False,
-    #allowed_paths=["*"],  # Allow CORS
-#)
-
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
 
-port=4000
+port=7860
 
 app.add_middleware(
     CORSMiddleware,

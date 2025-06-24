@@ -64,7 +64,7 @@ export default function Home() {
                                 <input
                                     type="range"
                                     id="temperature-input"
-                                    min="0"
+                                    min="0.1"
                                     max="2"
                                     step="0.1"
                                     className="w-full"

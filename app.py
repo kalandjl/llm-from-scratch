@@ -1,3 +1,6 @@
+import gradio as gr
+import random
+
 # Dataset: source code for 'requests' python libraray
 text = open("data/requests.txt").read()
 import numpy as np
@@ -379,7 +382,7 @@ class Model:
             W2 = np.random.randn(n_embd * ffwd_expansion_factor, n_embd) * np.sqrt(2.0 / (n_embd * ffwd_expansion_factor))
 
             # Append transformer
-            self.transformers.append(Transformer(W1, W2, n_attn_heads=16, n_embd=n_embd))
+            self.transformers.append(Transformer(W1, W2, n_attn_heads=4, n_embd=n_embd))
 
         self.cache = {} # A dictionary to store forward pass values
 
@@ -527,11 +530,12 @@ model = Model(embedding_matrix, temperature=1.0, max_sequence_length=1000, n_emb
 # Load the saved weights
 loaded_weights = np.load('my_model.npz')
 
+for key in loaded_weights.keys():
+    print(key)
 print("Loading saved model weights...")
 
 # Set the main model weights
 model.embedding_matrix = loaded_weights["embedding_matrix"]
-model.unembedding_matrix = loaded_weights["unembedding_matrix"] 
 model.position_matrix = loaded_weights["position_matrix"]
 print("✓ Loaded main matrices")
 
@@ -578,7 +582,7 @@ def get_batch(data, batch_size, block_size):
 
 
 
-x_batch, y_batch = get_batch(data, 256, 64)
+x_batch, y_batch = get_batch(data, 256, 34)
 
 
 # Calculate loss and probabilites
@@ -586,3 +590,48 @@ logits = model.forward(x_batch)
 loss_initial, probabilities = model.calc_loss(logits, y_batch)
 
 print(loss_initial)
+
+def generate_text(prompt, temperature, max_length):
+    print(f"Generating with prompt: '{prompt}', temp: {temperature}, length: {max_length}")
+    
+    if not prompt:
+        prompt = "\n" # Default prompt
+
+    # Set the model's temperature for this specific generation
+    model.temperature = temperature
+    
+    # Encode the prompt and generate
+    char_indices = encode(prompt)
+    for _ in range(int(max_length)):
+        # Important: only feed the last block_size tokens as context
+        context = char_indices[-1000:]
+        next_char_index = model.pred(context)
+        char_indices.append(next_char_index)
+        
+    # Decode the final list of indices into a string
+    generated_text = decode(char_indices)
+    return generated_text
+
+with gr.Blocks(theme=gr.themes.Soft()) as app:
+    gr.Markdown("<h1>From-Scratch Transformer Text Generation</h1>")
+    gr.Markdown(
+        "This is a live demo of a multi-layer Transformer model built from scratch in NumPy. "
+        "It was trained on the source code of the 'requests' Python library. "
+    )
+    with gr.Row():
+        with gr.Column():
+            prompt_input = gr.Textbox(label="Initial Prompt", placeholder="e.g., def get_request(", lines=3)
+            temp_slider = gr.Slider(minimum=0.1, maximum=1.5, value=0.9, step=0.1, label="Temperature")
+            len_slider = gr.Slider(minimum=50, maximum=1000, value=500, step=50, label="Generation Length")
+            submit_btn = gr.Button("Generate", variant="primary")
+        with gr.Column():
+            output_text = gr.Textbox(label="Generated Code", lines=15, interactive=False)
+
+    submit_btn.click(
+        fn=generate_text,
+        inputs=[prompt_input, temp_slider, len_slider],
+        outputs=output_text,
+        api_name="generate"
+    )
+
+app.launch(server_name="0.0.0.0", server_port=3000, share=False)

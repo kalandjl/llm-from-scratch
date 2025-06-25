@@ -1,11 +1,10 @@
 # Dataset: source code for 'requests' python libraray
-text = open("data/requests.txt").read()
+text = open("../data/requests.txt").read()
 
 import numpy as np
 
 # sorted list of all unique characters in the text
 chars = sorted(list(set(text)))
-vocab_size = len(chars)
 
 # string-to-integer mapping
 stoi = { char:i for i,char in enumerate(chars) }
@@ -27,8 +26,22 @@ max_seq_len = 1000
 
 n_embd = 64
 
-# Initialize embedding matrix
-embedding_matrix = np.random.randn(vocab_size, n_embd)
+# This class allows for the requires grad variable 
+class Parameter:
+    def __init__(self, weights, requires_grad=True):
+        
+        self.data = weights
+        self.requires_grad = requires_grad
+        self.grad = np.zeros_like(weights)
+
+    def __repr__(self):
+        return f"Parameter with data shape {self.data.shape}"
+
+    def __isub__(self, other):
+        self.data -= other 
+
+    def zerograds(self):
+        self.grads = np.zeros_like(self.weights)
 
 def cross_entropy_loss(y_pred, y_true):
 
@@ -43,13 +56,9 @@ def cross_entropy_loss(y_pred, y_true):
 class self_attention_block:
     def __init__(self, W_query, W_key, W_value):
         
-        self.W_query   = W_query 
+        self.W_query = W_query 
         self.W_key = W_key 
         self.W_value = W_value
-
-        self.W_query_grad = np.zeros_like(self.W_query)
-        self.W_key_grad = np.zeros_like(self.W_key)
-        self.W_value_grad = np.zeros_like(self.W_value)
 
         self.cache = {}
 
@@ -60,9 +69,9 @@ class self_attention_block:
 
         B, T, n_embd = x.shape
         
-        queries = x @ self.W_query    # (B, T, n_embd)
-        keys = x @ self.W_key         # (B, T, n_embd) 
-        values = x @ self.W_value     # (B, T, n_embd)
+        queries = x @ self.W_query.data    # (B, T, n_embd)
+        keys = x @ self.W_key.data         # (B, T, n_embd) 
+        values = x @ self.W_value.data     # (B, T, n_embd)
 
         self.cache['queries'] = queries  
         self.cache['keys'] = keys
@@ -111,9 +120,9 @@ class self_attention_block:
         d_keys = d_attention_scores_scaled.transpose(0, 2, 1) @ self.cache['queries']
 
         # Gradient through: queries = x @ W_query (and same for keys, values)
-        self.W_query_grad, d_x_from_queries = self.linear_backward(d_queries, self.W_query, self.cache['x'])
-        self.W_key_grad, d_x_from_keys = self.linear_backward(d_keys, self.W_key, self.cache['x'])  
-        self.W_value_grad, d_x_from_values = self.linear_backward(d_values, self.W_value, self.cache['x'])
+        self.W_query.grad, d_x_from_queries = self.linear_backward(d_queries, self.W_query.data, self.cache['x'])
+        self.W_key.grad, d_x_from_keys = self.linear_backward(d_keys, self.W_key.data, self.cache['x'])  
+        self.W_value.grad, d_x_from_values = self.linear_backward(d_values, self.W_value.data, self.cache['x'])
         
         # Sum gradients from all three paths
         d_x = d_x_from_queries + d_x_from_keys + d_x_from_values
@@ -127,9 +136,9 @@ class self_attention_block:
         return d_W, d_x
 
     def optimizer (self, learning_rate):
-        self.W_query -= (self.W_query_grad * learning_rate)
-        self.W_key -= (self.W_key_grad * learning_rate)
-        self.W_value-= (self.W_value_grad * learning_rate)
+        self.W_query.data -= (self.W_query.grad * learning_rate)
+        self.W_key.data -= (self.W_key.grad * learning_rate)
+        self.W_value.data -= (self.W_value.grad * learning_rate)
 
 class multi_head_attention:
     def __init__ (self, n_heads, n_embd):
@@ -140,15 +149,13 @@ class multi_head_attention:
         self.heads = []
         for i in range(n_heads):
             # Each head gets its own Q, K, V projections
-            W_q = np.random.randn(n_embd, self.head_dim) * 0.02
-            W_k = np.random.randn(n_embd, self.head_dim) * 0.02
-            W_v = np.random.randn(n_embd, self.head_dim) * 0.02
+            W_q = Parameter(np.random.randn(n_embd, self.head_dim) * 0.02)
+            W_k = Parameter(np.random.randn(n_embd, self.head_dim) * 0.02)
+            W_v = Parameter(np.random.randn(n_embd, self.head_dim) * 0.02)
             self.heads.append(self_attention_block(W_q, W_k, W_v))
         
         # Output projection to combine all heads
-        self.W_output = np.random.randn(n_embd, n_embd) * 0.02
-
-        self.W_output_grad = np.zeros_like(self.W_output)
+        self.W_output = Parameter(np.random.randn(n_embd, n_embd) * 0.02)
 
         self.cache = {}
 
@@ -177,12 +184,12 @@ class multi_head_attention:
         self.cache['concat_output'] = concat_output
         
         # Final projection
-        output = concat_output @ self.W_output
+        output = concat_output @ self.W_output.data
         return output
 
     def backward(self, d_output):
 
-        self.W_output_grad, d_concat = self.linear_backward(d_output, self.W_output, self.cache['concat_output'])
+        self.W_output.grad, d_concat = self.linear_backward(d_output, self.W_output.data, self.cache['concat_output'])
 
         head_gradients = np.split(d_concat, self.n_heads, axis=-1)
 
@@ -198,7 +205,7 @@ class multi_head_attention:
         return d_x_sum
 
     def optimizer(self, learning_rate):
-        self.W_output -= (self.W_output_grad * learning_rate)
+        self.W_output.data -= (self.W_output.grad * learning_rate)
         for head in self.heads:
             head.optimizer(learning_rate)
 
@@ -206,11 +213,8 @@ class LayerNorm:
     def __init__ (self, n_embd):
 
         self.n_embd = n_embd
-        self.gamma = np.ones((n_embd,))
-        self.beta = np.zeros((n_embd,))
-
-        self.gamma_grad = np.zeros_like(self.gamma)
-        self.beta_grad = np.zeros_like(self.beta)
+        self.gamma = Parameter(np.ones((n_embd,)))
+        self.beta = Parameter(np.zeros((n_embd,)))
 
         self.cache = {}
         
@@ -226,18 +230,18 @@ class LayerNorm:
         
         # Cache values needed for the backward pass
         self.cache['x_normalized'] = x_normalized
-        self.cache['gamma'] = self.gamma
+        self.cache['gamma'] = self.gamma.data
         self.cache['std_dev'] = np.sqrt(variance + epsilon)
 
-        return x_normalized * self.gamma + self.beta
+        return x_normalized * self.gamma.data + self.beta.data
 
     
     def backward (self, d_output):
 
         # Calculate gradients for gamma and beta
         # These are summed over the batch and time dimensions to match the parameter shapes
-        self.beta_grad = np.sum(d_output, axis=(0,1))
-        self.gamma_grad = np.sum(d_output * self.cache['x_normalized'], axis=(0,1))
+        self.beta.grad = np.sum(d_output, axis=(0,1))
+        self.gamma.grad = np.sum(d_output * self.cache['x_normalized'], axis=(0,1))
 
         # Calculate the gradient for the input x (the error signal to pass back)
         N = self.n_embd
@@ -258,17 +262,15 @@ class LayerNorm:
         
     def optimizer (self, learning_rate):
         
-        self.gamma -= (self.gamma_grad * learning_rate)
-        self.beta -= (self.beta_grad * learning_rate)
+        self.gamma.data -= (self.gamma.grad * learning_rate)
+        self.beta.data -= (self.beta.grad * learning_rate)
 
 class Transformer:
     def __init__ (self, W1, W2, n_attn_heads, n_embd):
+
         self.W1 = W1
         self.W2 = W2
         self.multi_head_attention_block = multi_head_attention(n_attn_heads, n_embd)
-
-        self.W1_grad = np.zeros_like(self.W1)
-        self.W2_grad = np.zeros_like(self.W2)
 
         self.layer_norm1 = LayerNorm(n_embd)
         self.layer_norm2 = LayerNorm(n_embd)
@@ -284,13 +286,13 @@ class Transformer:
         norm_output_1 = self.layer_norm1.forward(add_output_1)  # Layer norm step
         self.cache['norm_output_1'] = norm_output_1
                 
-        hidden = norm_output_1 @ self.W1
+        hidden = norm_output_1 @ self.W1.data
         self.cache['hidden'] = hidden
         
         hidden_activated = np.maximum(0, hidden)
         self.cache['hidden_activated'] = hidden_activated 
         
-        processed_vectors = hidden_activated @ self.W2 # Shape: (B, T, n_embd)
+        processed_vectors = hidden_activated @ self.W2.data # Shape: (B, T, n_embd)
         self.cache['processed_vectors'] = processed_vectors
 
         add_output_2 = norm_output_1 + processed_vectors   # Residual connection step
@@ -310,15 +312,15 @@ class Transformer:
 
         # Put d_processed_vectors through FFN backprop
         # Activated hidden layer
-        grad_W2, d_hidden_activated = self.linear_backward(d_processed_vectors, self.W2, self.cache['hidden_activated'])
-        self.W2_grad = grad_W2
+        grad_W2, d_hidden_activated = self.linear_backward(d_processed_vectors, self.W2.data, self.cache['hidden_activated'])
+        self.W2.grad = grad_W2
 
         # Relu backprop
         d_hidden = d_hidden_activated * (self.cache['hidden'] > 0)
 
         # Hidden layer
-        grad_W1, d_norm_output_1_from_ffn = self.linear_backward(d_hidden, self.W1, self.cache['norm_output_1'])
-        self.W1_grad = grad_W1
+        grad_W1, d_norm_output_1_from_ffn = self.linear_backward(d_hidden, self.W1.data, self.cache['norm_output_1'])
+        self.W1.grad = grad_W1
 
         # Recombine error gradients 
         d_norm_output_1_total = d_norm_output_1_from_ffn + d_norm_output_1_from_residual
@@ -343,8 +345,8 @@ class Transformer:
         self.layer_norm1.optimizer(learning_rate)
         self.layer_norm2.optimizer(learning_rate)
         
-        self.W1 -= (self.W1_grad * learning_rate)
-        self.W2 -= (self.W2_grad * learning_rate)
+        self.W1.data -= (self.W1.grad * learning_rate)
+        self.W2.data -= (self.W2.grad * learning_rate)
         
     @staticmethod
     def linear_backward(d_output, W, x_from_cache):
@@ -361,11 +363,13 @@ class Transformer:
         return d_W, d_x
 
 class Model:
-    def __init__(self,embedding_matrix, temperature=1.0, max_sequence_length=1000, n_embd=64, n_transformers=6, ffwd_expansion_factor=4):
+    def __init__(self, temperature=1.0, max_sequence_length=1000, n_embd=64, n_transformers=6, ffwd_expansion_factor=4):
+
+        vocab_size = len(chars)
 
         # Initialize weight matrices
-        self.embedding_matrix = embedding_matrix
-        self.position_matrix = np.random.randn(max_sequence_length, n_embd)
+        self.embedding_matrix = np.random.randn(vocab_size, n_embd)
+        self.position_matrix = Parameter(np.random.randn(max_sequence_length, n_embd))
 
         # Hidden layer initialization functions
         
@@ -375,8 +379,8 @@ class Model:
         for i in range(n_transformers):
             
             # Hidden layer initialization 
-            W1 = np.random.randn(n_embd, n_embd * ffwd_expansion_factor) * np.sqrt(2.0 / n_embd)
-            W2 = np.random.randn(n_embd * ffwd_expansion_factor, n_embd) * np.sqrt(2.0 / (n_embd * ffwd_expansion_factor))
+            W1 = Parameter(np.random.randn(n_embd, n_embd * ffwd_expansion_factor) * np.sqrt(2.0 / n_embd))
+            W2 = Parameter(np.random.randn(n_embd * ffwd_expansion_factor, n_embd) * np.sqrt(2.0 / (n_embd * ffwd_expansion_factor)))
 
             # Append transformer
             self.transformers.append(Transformer(W1, W2, n_attn_heads=8, n_embd=n_embd))
@@ -388,10 +392,6 @@ class Model:
         # Temperature hyperparameter
         self.temperature = temperature
         
-        # Gradient buckets
-        self.embedding_matrix_grad = np.zeros_like(self.embedding_matrix)
-        self.position_matrix_grad = np.zeros_like(self.position_matrix)
-
 
     def forward(self, x_batch):
         
@@ -407,7 +407,7 @@ class Model:
 
         # Positional embeddings
         B, T = x_batch.shape
-        pos = self.position_matrix[:T]  # Slice for sequence length
+        pos = self.position_matrix.data[:T]  # Slice for sequence length
         self.cache['pos'] = pos
         
         # Add position to token embeddings
@@ -465,28 +465,11 @@ class Model:
         # Return probabilities because they are the starting point for backpropagation
         return mean_loss, probabilities
 
-    
-    # Calculates the gradients for a specific layer and it's resulting vector
-    @staticmethod
-    def linear_backward(d_output, W, x_from_cache):
-
-        # d_W = x.T @ dy
-        # d_x = dy @ W.T
-
-        d_x = d_output @ W.T
-
-        # Flaten weight and input arrays to calculate weight gradients
-        x_reshaped, dy_reshaped = x_from_cache.reshape(-1, x_from_cache.shape[-1]), d_output.reshape(-1, d_output.shape[-1])
-        d_W = x_reshaped.T @ dy_reshaped
-
-        return d_W, d_x
-
-
     def backward (self, d_logits):
 
         # Reset gradients at start of backward pass
-        self.embedding_matrix_grad.fill(0)
-        self.position_matrix_grad.fill(0)
+        self.embedding_matrix.zerograds()
+        self.position_matrix.zerograds()
         
         # Unembedding layer - handle tied weights correctly
         d_transformer_output = d_logits @ self.embedding_matrix  # gradient w.r.t transformer output
@@ -501,7 +484,7 @@ class Model:
         unembedding_grad = transformer_output_flat.T @ d_logits_flat
         
         # Add unembedding gradient to embedding matrix gradients
-        self.embedding_matrix_grad += unembedding_grad.T
+        self.embedding_matrix.grad += unembedding_grad.T
         
         # Loop in reverse order through transformers
         current_grad = d_transformer_output
@@ -518,26 +501,73 @@ class Model:
         
         # Update position matrix gradients
         B, T = self.cache['x_batch'].shape
-        self.position_matrix_grad[:T] += np.sum(d_pos, axis=0)  # Sum over batch dimension
+        self.position_matrix.grad[:T] += np.sum(d_pos, axis=0)  # Sum over batch dimension
     
         # Perform reverse lookup on embedding array
-        np.add.at(self.embedding_matrix_grad, self.cache['x_batch'], d_embed)
+        np.add.at(self.embedding_matrix.grad, self.cache['x_batch'], d_embed)
 
     def optimizer (self, learning_rate): 
 
-        self.embedding_matrix -= (self.embedding_matrix_grad * learning_rate)
-        self.position_matrix -= (self.position_matrix_grad * learning_rate)
+        self.embedding_matrix.data -= (self.embedding_matrix.grad * learning_rate)
+        self.position_matrix.data -= (self.position_matrix.grad * learning_rate)
         
         for transformer in self.transformers:
             transformer.optimizer(learning_rate)
 
-model = Model(embedding_matrix)
+    @property
+    def parameters(self):
+        parameters = {
+            "embedding_matrix": self.embedding_matrix,
+            "position_matrix": self.position_matrix,
+        }
+
+        for idx, transformer in enumerate(self.transformers):
+            parameters[f"transform.{idx}.W1"] = transformer.W1
+            parameters[f"transform.{idx}.W2"] = transformer.W2
+            parameters[f"transform.{idx}.layer_norm1.gamma"] = transformer.layer_norm1.gamma
+            parameters[f"transform.{idx}.layer_norm1.beta"] = transformer.layer_norm1.beta
+            parameters[f"transform.{idx}.layer_norm2.gamma"] = transformer.layer_norm2.gamma
+            parameters[f"transform.{idx}.layer_norm2.beta"] = transformer.layer_norm2.beta
+            parameters[f"transform.{idx}.multi_head_attention_block.W_output"] = transformer.multi_head_attention_block.W_output
+            
+            for index, attention_head in enumerate(transformer.multi_head_attention_block.heads):
+                parameters[f"transform.{idx}.multi_head_attention_block.heads.{index}.key"] = attention_head.W_key
+                parameters[f"transform.{idx}.multi_head_attention_block.heads.{index}.query"] = attention_head.W_query
+                parameters[f"transform.{idx}.multi_head_attention_block.heads.{index}.value"] = attention_head.W_value
+
+        return parameters
+
+    def freezeParams(self): 
+
+        # Freezes model weights in prereration for LoRA training
+        self.embedding_matrix.requires_grad=False
+        self.position_matrix.requires_grad=False
+        
+        for x in self.transformers:
+
+            self.transformer.W1.requires_grad=False
+            self.transformer.W2.requires_grad=False
+            self.transformer.layer_norm1.gamma.requires_grad=False
+            self.transformer.layer_norm1.beta.requires_grad=False
+            self.transformer.layer_norm2.gamma.requires_grad=False
+            self.transformer.layer_norm2.beta.requires_grad=False
+            self.transformer.multi_head_attention_block.W_output.requires_grad=False
+            
+            for i in transformer.multi_head_attention_block.heads:
+
+                self.attention_head.W_key.requires_grad=False
+                self.attention_head.W_query.requires_grad=False
+                self.attention_head.W_value.requires_grad=False
+
+
+
+model = Model()
 # Get next character predictions for 'd'
 logits = model.forward([[stoi['a'], stoi['p']]])
 model.pred([int(stoi['r'])])
 
 # Load the saved weights
-loaded_weights = np.load('my_model.npz')
+loaded_weights = np.load('../models/my_model.npz')
 
 for key in loaded_weights.keys():
     print(key)
@@ -620,47 +650,4 @@ def generate_text(prompt, temperature, heatMap, max_length):
     generated_text = decode(char_indices)
     return generated_text
 
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-
-app = FastAPI()
-
-port=7860
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-from pydantic import BaseModel
-
-# Define request body
-class ReqData(BaseModel):
-    prompt: str
-    temperature: float
-    heatMap: bool
-    length: int
-
-
-# Root endpoint
-@app.get("/")
-def root():
-    return {"message": "Model is live!"}
-
-@app.post("/generate")
-async def predict_image(data: ReqData):
-
-    prompt = data.prompt
-    temperature = data.temperature
-    heatMap = data.heatMap
-    length = data.length
-
-    try:
-        generation = generate_text(prompt, temperature, heatMap, length)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to get model generation: {e}")
-
-    return {"generation": generation}
+generation = generate_text("def", 1.0, True, 50)

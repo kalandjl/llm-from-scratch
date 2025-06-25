@@ -41,7 +41,8 @@ class Parameter:
         self.data -= other 
 
     def zerograds(self):
-        self.grad = np.zeros_like(self.data)
+        if self.requires_grad:
+            self.grad = np.zeros_like(self.data)
 
 def cross_entropy_loss(y_pred, y_true):
 
@@ -68,10 +69,22 @@ class self_attention_block:
         self.cache['x'] = x
 
         B, T, n_embd = x.shape
-        
-        queries = x @ self.W_query.data    # (B, T, n_embd)
-        keys = x @ self.W_key.data         # (B, T, n_embd) 
-        values = x @ self.W_value.data     # (B, T, n_embd)
+
+        # Check if is LoRA layer
+        if hasattr(self.W_query, 'forward'):
+            queries = self.W_query.forward(x)
+        else:
+            queries = x @ self.W_query.data
+
+        if hasattr(self.W_key, 'forward'):
+            keys = self.W_key.forward(x)
+        else:
+            keys = x @ self.W_key.data
+
+        if hasattr(self.W_value, 'forward'):
+            values = self.W_value.forward(x)
+        else:
+            values = x @ self.W_value.data
 
         self.cache['queries'] = queries  
         self.cache['keys'] = keys
@@ -101,10 +114,23 @@ class self_attention_block:
         return output
         
     def backward(self, d_output):
-        
-        self.W_query.zerograds()
-        self.W_key.zerograds()
-        self.W_value.zerograds()
+
+        # Check if is LoRA layer
+        if hasattr(self.W_query, 'forward'):
+            self.W_query.lora_A.zerograds()
+            self.W_query.lora_B.zerograds()
+        else:
+            self.W_query.zerograds()
+        if hasattr(self.W_key, 'forward'):
+            self.W_key.lora_A.zerograds()
+            self.W_key.lora_B.zerograds()
+        else:
+            self.W_key.zerograds()
+        if hasattr(self.W_value, 'forward'):
+            self.W_value.lora_A.zerograds()
+            self.W_value.lora_B.zerograds()
+        else:
+            self.W_value.zerograds()
 
         # Gradient through: output = attention_weights @ values
         d_attention_weights = d_output @ self.cache['values'].transpose(0, 2, 1)
@@ -123,10 +149,27 @@ class self_attention_block:
         d_queries = d_attention_scores_scaled @ self.cache['keys']
         d_keys = d_attention_scores_scaled.transpose(0, 2, 1) @ self.cache['queries']
 
-        # Gradient through: queries = x @ W_query (and same for keys, values)
-        self.W_query.grad, d_x_from_queries = self.linear_backward(d_queries, self.W_query.data, self.cache['x'])
-        self.W_key.grad, d_x_from_keys = self.linear_backward(d_keys, self.W_key.data, self.cache['x'])  
-        self.W_value.grad, d_x_from_values = self.linear_backward(d_values, self.W_value.data, self.cache['x'])
+        if hasattr(self.W_query, 'backward'):
+            d_x_from_queries = self.W_query.backward(d_queries, self.cache['x'])
+        else:
+            W_query_grad, d_x_from_queries = self.linear_backward(d_queries, self.W_query.data, self.cache['x'])
+
+            if self.W_query.requires_grad:
+                self.W_query.grad = W_query_grad
+        if hasattr(self.W_key, 'backward'):
+            d_x_from_keys = self.W_key.backward(d_keys, self.cache['x'])
+        else:
+            W_key_grad, d_x_from_keys = self.linear_backward(d_keys, self.W_key.data, self.cache['x'])
+
+            if self.W_key.requires_grad:
+                self.W_key.grad = W_key_grad
+        if hasattr(self.W_value, 'backward'):
+            d_x_from_values = self.W_value.backward(d_values, self.cache['x'])
+        else:
+            W_value_grad, d_x_from_values = self.linear_backward(d_values, self.W_value.data, self.cache['x'])
+            
+            if self.W_value.requires_grad:
+                self.W_value.grad = W_value_grad
         
         # Sum gradients from all three paths
         d_x = d_x_from_queries + d_x_from_keys + d_x_from_values
@@ -140,9 +183,21 @@ class self_attention_block:
         return d_W, d_x
 
     def optimizer (self, learning_rate):
-        self.W_query.data -= (self.W_query.grad * learning_rate)
-        self.W_key.data -= (self.W_key.grad * learning_rate)
-        self.W_value.data -= (self.W_value.grad * learning_rate)
+        if hasattr(self.W_query, 'optimizer'):
+            self.W_query.optimizer(learning_rate)
+        else:
+            if self.W_query.requires_grad:
+                self.W_query.data -= (self.W_query.grad * learning_rate)
+        if hasattr(self.W_key, 'optimizer'):
+            self.W_key.optimizer(learning_rate)
+        else:
+            if self.W_key.requires_grad:
+                self.W_key.data -= (self.W_key.grad * learning_rate)
+        if hasattr(self.W_value, 'optimizer'):
+            self.W_value.optimizer(learning_rate)
+        else:
+            if self.W_value.requires_grad:
+                self.W_value.data -= (self.W_value.grad * learning_rate)
 
 class multi_head_attention:
     def __init__ (self, n_heads, n_embd):
@@ -195,7 +250,10 @@ class multi_head_attention:
 
         self.W_output.zerograds()
         
-        self.W_output.grad, d_concat = self.linear_backward(d_output, self.W_output.data, self.cache['concat_output'])
+        W_output_grad, d_concat = self.linear_backward(d_output, self.W_output.data, self.cache['concat_output'])
+
+        if self.W_output.requires_grad:
+            self.W_output.grad = W_output_grad
 
         head_gradients = np.split(d_concat, self.n_heads, axis=-1)
 
@@ -211,7 +269,10 @@ class multi_head_attention:
         return d_x_sum
 
     def optimizer(self, learning_rate):
-        self.W_output.data -= (self.W_output.grad * learning_rate)
+
+        if self.W_output.requires_grad:
+            self.W_output.data -= (self.W_output.grad * learning_rate)
+        
         for head in self.heads:
             head.optimizer(learning_rate)
 
@@ -249,8 +310,11 @@ class LayerNorm:
 
         # Calculate gradients for gamma and beta
         # These are summed over the batch and time dimensions to match the parameter shapes
-        self.beta.grad = np.sum(d_output, axis=(0,1))
-        self.gamma.grad = np.sum(d_output * self.cache['x_normalized'], axis=(0,1))
+        if self.beta.requires_grad:
+            self.beta.grad = np.sum(d_output, axis=(0,1))
+        
+        if self.gamma.requires_grad:
+            self.gamma.grad = np.sum(d_output * self.cache['x_normalized'], axis=(0,1))
 
         # Calculate the gradient for the input x (the error signal to pass back)
         N = self.n_embd
@@ -271,8 +335,11 @@ class LayerNorm:
         
     def optimizer (self, learning_rate):
         
-        self.gamma.data -= (self.gamma.grad * learning_rate)
-        self.beta.data -= (self.beta.grad * learning_rate)
+        if self.gamma.requires_grad:
+            self.gamma.data -= (self.gamma.grad * learning_rate)
+
+        if self.beta.requires_grad:
+            self.beta.data -= (self.beta.grad * learning_rate)
 
 class Transformer:
     def __init__ (self, W1, W2, n_attn_heads, n_embd):
@@ -325,14 +392,18 @@ class Transformer:
         # Put d_processed_vectors through FFN backprop
         # Activated hidden layer
         grad_W2, d_hidden_activated = self.linear_backward(d_processed_vectors, self.W2.data, self.cache['hidden_activated'])
-        self.W2.grad = grad_W2
+
+        if self.W2.requires_grad:
+            self.W2.grad = grad_W2
 
         # Relu backprop
         d_hidden = d_hidden_activated * (self.cache['hidden'] > 0)
 
         # Hidden layer
         grad_W1, d_norm_output_1_from_ffn = self.linear_backward(d_hidden, self.W1.data, self.cache['norm_output_1'])
-        self.W1.grad = grad_W1
+        
+        if self.W1.requires_grad:
+            self.W1.grad = grad_W1
 
         # Recombine error gradients 
         d_norm_output_1_total = d_norm_output_1_from_ffn + d_norm_output_1_from_residual
@@ -357,8 +428,11 @@ class Transformer:
         self.layer_norm1.optimizer(learning_rate)
         self.layer_norm2.optimizer(learning_rate)
         
-        self.W1.data -= (self.W1.grad * learning_rate)
-        self.W2.data -= (self.W2.grad * learning_rate)
+        if self.W1.requires_grad:
+            self.W1.data -= (self.W1.grad * learning_rate)
+
+        if self.W2.requires_grad:
+            self.W2.data -= (self.W2.grad * learning_rate)
         
     @staticmethod
     def linear_backward(d_output, W, x_from_cache):
@@ -496,7 +570,8 @@ class Model:
         unembedding_grad = transformer_output_flat.T @ d_logits_flat
         
         # Add unembedding gradient to embedding matrix gradients
-        self.embedding_matrix.grad += unembedding_grad.T
+        if self.embedding_matrix.requires_grad:
+            self.embedding_matrix.grad += unembedding_grad.T
         
         # Loop in reverse order through transformers
         current_grad = d_transformer_output
@@ -513,21 +588,28 @@ class Model:
         
         # Update position matrix gradients
         B, T = self.cache['x_batch'].shape
-        self.position_matrix.grad[:T] += np.sum(d_pos, axis=0)  # Sum over batch dimension
+
+        if self.position_matrix.requires_grad:
+            self.position_matrix.grad[:T] += np.sum(d_pos, axis=0)  # Sum over batch dimension
     
-        # Perform reverse lookup on embedding array
-        np.add.at(self.embedding_matrix.grad, self.cache['x_batch'], d_embed)
+        if self.embedding_matrix.requires_grad:
+            # Perform reverse lookup on embedding array
+            np.add.at(self.embedding_matrix.grad, self.cache['x_batch'], d_embed)
 
     def optimizer (self, learning_rate): 
 
-        self.embedding_matrix.data -= (self.embedding_matrix.grad * learning_rate)
-        self.position_matrix.data -= (self.position_matrix.grad * learning_rate)
+        if self.embedding_matrix.requires_grad:
+            self.embedding_matrix.data -= (self.embedding_matrix.grad * learning_rate)
+
+        if self.position_matrix.requires_grad:
+            self.position_matrix.data -= (self.position_matrix.grad * learning_rate)
         
         for transformer in self.transformers:
             transformer.optimizer(learning_rate)
 
     @property
     def parameters(self):
+
         parameters = {
             "embedding_matrix": self.embedding_matrix,
             "position_matrix": self.position_matrix,
@@ -565,11 +647,11 @@ class Model:
             x.layer_norm2.beta.requires_grad=False
             x.multi_head_attention_block.W_output.requires_grad=False
             
-            for i in transformer.multi_head_attention_block.heads:
+            for i in x.multi_head_attention_block.heads:
 
-                self.attention_head.W_key.requires_grad=False
-                self.attention_head.W_query.requires_grad=False
-                self.attention_head.W_value.requires_grad=False
+                i.W_key.requires_grad=False
+                i.W_query.requires_grad=False
+                i.W_value.requires_grad=False
 
 
 
@@ -588,7 +670,7 @@ print("Loading saved model weights...")
 # Set the main model weights
 model.embedding_matrix = Parameter(loaded_weights["embedding_matrix"])
 model.position_matrix = Parameter(loaded_weights["position_matrix"])
-print("✓ Loaded main matrices")
+print("Loaded main matrices")
 
 # Load transformer weights
 for idx, transformer in enumerate(model.transformers):
@@ -609,7 +691,7 @@ for idx, transformer in enumerate(model.transformers):
         attention_head.W_query = Parameter(loaded_weights[f"transform.{idx}.multi_head_attention_block.heads.{index}.query"])
         attention_head.W_value = Parameter(loaded_weights[f"transform.{idx}.multi_head_attention_block.heads.{index}.value"])
     
-    print(f"✓ Loaded transformer {idx}")
+    print(f"Loaded transformer {idx}")
 
 loaded_weights.close()
 print("Model weights loaded successfully!")
@@ -641,6 +723,90 @@ loss_initial, probabilities = model.calc_loss(logits, y_batch)
 
 print(loss_initial)
 
+# This one loop will freeze every parameter in the entire model
+for key, param in model.parameters.items():
+    # "Freeze" the model's weight
+    param.requires_grad = False
+
+print("Embedding layer frozen?", model.transformers[4].multi_head_attention_block.W_output.requires_grad== False)
+print("Attention layer 15 frozen?", model.transformers[2].multi_head_attention_block.heads[0].W_key.requires_grad == False)
+
+class LoRALayer():
+
+    def __init__(self, original_layer, rank, alpha):
+
+        self.original_layer = original_layer
+
+        # Get dimensions from the original layer
+        in_features, out_features = self.original_layer.data.shape
+
+
+        # Initialize LoRA A & B matrices
+        self.lora_A = Parameter(np.random.randn(in_features, rank))
+        self.lora_B = Parameter(np.zeros((rank, out_features))) # Paper initializes B with zeros
+
+
+        # Scaling factor
+        self.scaling = alpha / rank
+
+    def forward(self, x):
+
+        # The origin linear layer calculation
+        original_output = x @ self.original_layer.data
+
+        # New update w/A & B matrices
+        lora_update = (x @ self.lora_A.data @ self.lora_B.data) * self.scaling
+
+        return original_output + lora_update
+    
+    def backward(self, d_output, x_input):
+
+        self.lora_A.zerograds()
+        self.lora_B.zerograds()
+        
+        # Gradient w.r.t input (what we return)
+        # d_x = d_output @ (W_original + A @ B)^T
+        # Since W_original is frozen, we only need gradients through A @ B
+        d_x_original = d_output @ self.original_layer.data.T
+        d_x_lora = d_output @ (self.lora_A.data @ self.lora_B.data).T * self.scaling
+        d_x = d_x_original + d_x_lora
+        
+        # Gradients for LoRA parameters
+        # Reshape inputs for matrix operations
+        x_reshaped = x_input.reshape(-1, x_input.shape[-1])  # (B*T, in_features)
+        d_output_reshaped = d_output.reshape(-1, d_output.shape[-1])  # (B*T, out_features)
+        
+        # Gradient w.r.t B: A^T @ x^T @ d_output * scaling
+        self.lora_B.grad = (self.lora_A.data.T @ x_reshaped.T @ d_output_reshaped) * self.scaling
+        
+        # Gradient w.r.t A: x^T @ d_output @ B^T * scaling  
+        self.lora_A.grad = (x_reshaped.T @ d_output_reshaped @ self.lora_B.data.T) * self.scaling
+        
+        # Don't compute gradients for original_layer since it's frozen
+        return d_x        
+    
+    def optimizer(self, learning_rate):
+
+        if self.lora_A.requires_grad:
+            self.lora_A.data -= (self.lora_A.grad * learning_rate)
+
+        if self.lora_B.requires_grad:
+            self.lora_B.data -= (self.lora_B.grad * learning_rate)
+
+
+# Initialize LoRA layers in model's query and value attention matrices
+for transformer in model.transformers:
+    for head in transformer.multi_head_attention_block.heads:
+
+
+        # Rank and alpha variables for LoRA layers
+        r = 8
+        a = 16
+
+        # Wrap query and value weights with LoRA
+        head.W_query = LoRALayer(head.W_query, r, a)
+        head.W_value = LoRALayer(head.W_value, r, a)
+
 def generate_text(prompt, temperature, heatMap, max_length):
     print(f"Generating with prompt: '{prompt}', temp: {temperature}, length: {max_length}")
     
@@ -662,9 +828,6 @@ def generate_text(prompt, temperature, heatMap, max_length):
     generated_text = decode(char_indices)
     return generated_text
 
-generation = generate_text("def", 1.0, True, 50)
-
-print(generation)
 
 import matplotlib.pyplot as plt
 from IPython import display
@@ -677,7 +840,7 @@ block_size = 128
 
 np.seterr(all='ignore')
 
-# --- Plotting Initialization ---
+# Plotting Initialization
 plot_losses = []
 fig, ax = plt.subplots()
 

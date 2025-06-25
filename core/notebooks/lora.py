@@ -890,3 +890,21 @@ ax.set_xlabel("Steps (x100)")
 ax.set_ylabel("Loss")
 
 print(f"Model loss: {model.loss}")
+
+# After training, collect LoRA weights
+lora_weights = {}
+
+for transformer_idx, transformer in enumerate(model.transformers):
+    for head_idx, head in enumerate(transformer.multi_head_attention_block.heads):
+        
+        # Check if it's a LoRA layer and collect A and B matrices
+        if hasattr(head.W_query, 'lora_A'):
+            lora_weights[f"transform.{transformer_idx}.head.{head_idx}.query.lora_A"] = head.W_query.lora_A.data
+            lora_weights[f"transform.{transformer_idx}.head.{head_idx}.query.lora_B"] = head.W_query.lora_B.data
+            
+        if hasattr(head.W_value, 'lora_A'):
+            lora_weights[f"transform.{transformer_idx}.head.{head_idx}.value.lora_A"] = head.W_value.lora_A.data
+            lora_weights[f"transform.{transformer_idx}.head.{head_idx}.value.lora_B"] = head.W_value.lora_B.data
+
+# Save the LoRA weights
+np.savez_compressed('../models/lora_weights.npz', **lora_weights)

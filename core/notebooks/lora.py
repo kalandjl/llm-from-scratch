@@ -41,7 +41,7 @@ class Parameter:
         self.data -= other 
 
     def zerograds(self):
-        self.grads = np.zeros_like(self.weights)
+        self.grad = np.zeros_like(self.data)
 
 def cross_entropy_loss(y_pred, y_true):
 
@@ -102,6 +102,10 @@ class self_attention_block:
         
     def backward(self, d_output):
         
+        self.W_query.zerograds()
+        self.W_key.zerograds()
+        self.W_value.zerograds()
+
         # Gradient through: output = attention_weights @ values
         d_attention_weights = d_output @ self.cache['values'].transpose(0, 2, 1)
         d_values = self.cache['attn_weights'].transpose(0, 2, 1) @ d_output  
@@ -189,6 +193,8 @@ class multi_head_attention:
 
     def backward(self, d_output):
 
+        self.W_output.zerograds()
+        
         self.W_output.grad, d_concat = self.linear_backward(d_output, self.W_output.data, self.cache['concat_output'])
 
         head_gradients = np.split(d_concat, self.n_heads, axis=-1)
@@ -237,6 +243,9 @@ class LayerNorm:
 
     
     def backward (self, d_output):
+
+        self.beta.zerograds()
+        self.gamma.zerograds()
 
         # Calculate gradients for gamma and beta
         # These are summed over the batch and time dimensions to match the parameter shapes
@@ -303,6 +312,9 @@ class Transformer:
 
     def backward (self, d_output):
 
+        self.W1.zerograds()
+        self.W2.zerograds()
+
         # Error gradient from last residiual connection step, calculated on LayerNorm.backwards()
         d_add2 = self.layer_norm2.backward(d_output)
 
@@ -368,7 +380,7 @@ class Model:
         vocab_size = len(chars)
 
         # Initialize weight matrices
-        self.embedding_matrix = np.random.randn(vocab_size, n_embd)
+        self.embedding_matrix = Parameter(np.random.randn(vocab_size, n_embd))
         self.position_matrix = Parameter(np.random.randn(max_sequence_length, n_embd))
 
         # Hidden layer initialization functions
@@ -402,7 +414,7 @@ class Model:
         self.cache['x_batch'] = x_batch
 
         # Output shape: (B, T, n_embd)
-        embd = self.embedding_matrix[x_batch]
+        embd = self.embedding_matrix.data[x_batch]
         self.cache['embd'] = embd
 
         # Positional embeddings
@@ -422,7 +434,7 @@ class Model:
             
         self.cache['transformer_output'] = transformer_output
         
-        logits = transformer_output @ self.embedding_matrix.T
+        logits = transformer_output @ self.embedding_matrix.data.T
 
         return logits
 
@@ -472,7 +484,7 @@ class Model:
         self.position_matrix.zerograds()
         
         # Unembedding layer - handle tied weights correctly
-        d_transformer_output = d_logits @ self.embedding_matrix  # gradient w.r.t transformer output
+        d_transformer_output = d_logits @ self.embedding_matrix.data  # gradient w.r.t transformer output
 
         transformer_output = self.cache['transformer_output']
         
@@ -545,13 +557,13 @@ class Model:
         
         for x in self.transformers:
 
-            self.transformer.W1.requires_grad=False
-            self.transformer.W2.requires_grad=False
-            self.transformer.layer_norm1.gamma.requires_grad=False
-            self.transformer.layer_norm1.beta.requires_grad=False
-            self.transformer.layer_norm2.gamma.requires_grad=False
-            self.transformer.layer_norm2.beta.requires_grad=False
-            self.transformer.multi_head_attention_block.W_output.requires_grad=False
+            x.W1.requires_grad=False
+            x.W2.requires_grad=False
+            x.layer_norm1.gamma.requires_grad=False
+            x.layer_norm1.beta.requires_grad=False
+            x.layer_norm2.gamma.requires_grad=False
+            x.layer_norm2.beta.requires_grad=False
+            x.multi_head_attention_block.W_output.requires_grad=False
             
             for i in transformer.multi_head_attention_block.heads:
 
@@ -574,8 +586,8 @@ for key in loaded_weights.keys():
 print("Loading saved model weights...")
 
 # Set the main model weights
-model.embedding_matrix = loaded_weights["embedding_matrix"]
-model.position_matrix = loaded_weights["position_matrix"]
+model.embedding_matrix = Parameter(loaded_weights["embedding_matrix"])
+model.position_matrix = Parameter(loaded_weights["position_matrix"])
 print("✓ Loaded main matrices")
 
 # Load transformer weights
@@ -583,19 +595,19 @@ for idx, transformer in enumerate(model.transformers):
     print(f"Loading transformer {idx}...")
     
     # Load basic weights
-    transformer.W1 = loaded_weights[f"transform.{idx}.W1"]
-    transformer.W2 = loaded_weights[f"transform.{idx}.W2"]
-    transformer.layer_norm1.gamma = loaded_weights[f"transform.{idx}.layer_norm1.gamma"]
-    transformer.layer_norm1.beta = loaded_weights[f"transform.{idx}.layer_norm1.beta"]
-    transformer.layer_norm2.gamma = loaded_weights[f"transform.{idx}.layer_norm2.gamma"]
-    transformer.layer_norm2.beta = loaded_weights[f"transform.{idx}.layer_norm2.beta"]
-    transformer.multi_head_attention_block.W_output = loaded_weights[f"transform.{idx}.multi_head_attention_block.W_output"]
+    transformer.W1 = Parameter(loaded_weights[f"transform.{idx}.W1"])
+    transformer.W2 = Parameter(loaded_weights[f"transform.{idx}.W2"])
+    transformer.layer_norm1.gamma = Parameter(loaded_weights[f"transform.{idx}.layer_norm1.gamma"])
+    transformer.layer_norm1.beta = Parameter(loaded_weights[f"transform.{idx}.layer_norm1.beta"])
+    transformer.layer_norm2.gamma = Parameter(loaded_weights[f"transform.{idx}.layer_norm2.gamma"])
+    transformer.layer_norm2.beta = Parameter(loaded_weights[f"transform.{idx}.layer_norm2.beta"])
+    transformer.multi_head_attention_block.W_output = Parameter(loaded_weights[f"transform.{idx}.multi_head_attention_block.W_output"])
     
     # Load attention head weights (16 heads each)
     for index, attention_head in enumerate(transformer.multi_head_attention_block.heads):
-        attention_head.W_key = loaded_weights[f"transform.{idx}.multi_head_attention_block.heads.{index}.key"]
-        attention_head.W_query = loaded_weights[f"transform.{idx}.multi_head_attention_block.heads.{index}.query"]
-        attention_head.W_value = loaded_weights[f"transform.{idx}.multi_head_attention_block.heads.{index}.value"]
+        attention_head.W_key = Parameter(loaded_weights[f"transform.{idx}.multi_head_attention_block.heads.{index}.key"])
+        attention_head.W_query = Parameter(loaded_weights[f"transform.{idx}.multi_head_attention_block.heads.{index}.query"])
+        attention_head.W_value = Parameter(loaded_weights[f"transform.{idx}.multi_head_attention_block.heads.{index}.value"])
     
     print(f"✓ Loaded transformer {idx}")
 
@@ -651,3 +663,67 @@ def generate_text(prompt, temperature, heatMap, max_length):
     return generated_text
 
 generation = generate_text("def", 1.0, True, 50)
+
+print(generation)
+
+import matplotlib.pyplot as plt
+from IPython import display
+
+# Training hyperparameters
+max_iters = 25000
+learning_rate = 1e-6
+batch_size = 32
+block_size = 128
+
+np.seterr(all='ignore')
+
+# --- Plotting Initialization ---
+plot_losses = []
+fig, ax = plt.subplots()
+
+print("Training model")
+
+# Training loop
+for step in range(max_iters):
+    
+    # Get a mini-batch of data
+    x_batch, y_batch = get_batch(data, batch_size, block_size)
+    
+    # Calculate loss and probabilites
+    logits = model.forward(x_batch)
+    loss_initial, probabilities = model.calc_loss(logits, y_batch)
+
+    plot_losses.append(loss_initial)
+
+    # Backward Pass
+    one_hot_array = np.eye(len(chars))[y_batch]
+    initial_gradient = probabilities - one_hot_array
+    
+    model.backward(initial_gradient)
+
+    # Optimizer
+    model.optimizer(learning_rate)
+
+    if step % 5 == 0:
+        print(f"Step {step}, Loss: {loss_initial}")
+        
+        # Graph plot
+        display.clear_output(wait=True)
+        ax.clear()
+        ax.plot(plot_losses)
+        ax.set_title("Training Loss Over Time")
+        ax.set_xlabel("Steps (x10)")
+        ax.set_ylabel("Loss")
+        if loss_initial < 4:
+            ax.set_ylim(top=4) # cut off loses higher than 4
+        display.display(fig)
+
+# Final clear to show the last plot cleanly
+display.clear_output(wait=True)
+ax.clear()
+ax.plot(plot_losses)
+ax.set_title("Final Training Loss")
+ax.set_xlabel("Steps (x100)")
+ax.set_ylabel("Loss")
+
+print(f"Model loss: {model.loss}")

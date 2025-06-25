@@ -548,7 +548,7 @@ model.embedding_matrix = loaded_weights["embedding_matrix"]
 model.position_matrix = loaded_weights["position_matrix"]
 print("✓ Loaded main matrices")
 
-# Load transformer weights (now we have exactly 6 transformers)
+# Load transformer weights
 for idx, transformer in enumerate(model.transformers):
     print(f"Loading transformer {idx}...")
     
@@ -590,8 +590,7 @@ def get_batch(data, batch_size, block_size):
     return np.array(x_batch), np.array(y_batch)
 
 
-
-x_batch, y_batch = get_batch(data, 256, 34)
+x_batch, y_batch = get_batch(data, 128, 34)
 
 
 # Calculate loss and probabilites

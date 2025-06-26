@@ -11,7 +11,12 @@ This model achieved a cross entropy loss of 0.6. While this doesnt translate dir
 which is roughly 54.9%. 
 
 ## Model Interface
-Being a front end devloper, leaving the model as just a notebook didn't feel right. I decided to make a Next.JS app where any user could prompt the model, adjust it's temperature and generation length, and see it's attention "heatmap". Implemented this was fairly simple, and HuggingFace worked amazingly as a deployment container for my heavy model logic. This gave me space to focus on the UI; check out some of the photos below
+Being a front end devloper, leaving the model as just a notebook didn't feel right. I decided to make a Next.JS app where any user could prompt the model, adjust it's temperature and generation length, and see it's attention "heatmap". Implemented this was fairly simple, and HuggingFace worked amazingly as a deployment container for my heavy model logic. This gave me space to focus on the UI; check out some of the photos below:
+
+![alt text](images/ss_2.png)
+![alt text](images/ss_3.png)
+![alt text](images/ss_4.png)
+
 
 ## Hugging Face Repository
 https://huggingface.co/spaces/kalandjl/leanai-gradio/tree/main

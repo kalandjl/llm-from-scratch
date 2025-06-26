@@ -670,6 +670,44 @@ async def predict_image(data: ReqData):
 from starlette.responses import StreamingResponse 
 import asyncio
 
+
+def get_heatmap(model, prompt):
+    """
+    Calculates the average attention heatmap for a given prompt.
+    
+    This function performs a forward pass to get the attention weights,
+    then averages the weights from all heads and all transformer layers
+    to produce a single (T, T) heatmap, where T is the length of the prompt.
+    """
+    print(f"Generating heatmap for prompt: '{prompt}'")
+    
+    # Encode the prompt and run a forward pass to populate caches
+    char_indices = encode(prompt)
+    model.forward(char_indices)
+    
+    # Collect all attention weight matrices from all heads and layers
+    all_attentions = []
+    for transformer in model.transformers:
+        for head in transformer.multi_head_attention_block.heads:
+            # attn_weights has shape (1, T, T), so we get the first element
+            attention_matrix = head.cache['attn_weights'][0]
+            all_attentions.append(attention_matrix)
+            
+    # Average all the collected attention matrices
+    if not all_attentions:
+        return []
+        
+    # Stack into a single numpy array and calculate the mean over the first axis
+    avg_attention_np = np.mean(np.array(all_attentions), axis=0)
+    
+    # Convert to a list of lists for JSON serialization
+    heatmap = avg_attention_np.tolist()
+    
+    return heatmap
+
+import json
+
+
 @app.get("/generate-stream")
 async def stream_generation(prompt: str, temperature: float, length: int):
 
@@ -701,5 +739,13 @@ async def stream_generation(prompt: str, temperature: float, length: int):
         print("".join(decode(char_indices)))
         # Final message after generation is done
         yield "data: [DONE]\n\n"
+
+        print("Calculating heatmap...")
+        heatmap_data = get_heatmap(model, prompt)
+        
+        # Final message with the heatmap
+        final_data = {"heatmap": heatmap_data, "status": "DONE"}
+        yield f"data: {json.dumps(final_data)}\n\n"
+
     
     return StreamingResponse(event_generator(), media_type="text/event-stream")

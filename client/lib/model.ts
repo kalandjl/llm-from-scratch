@@ -2,7 +2,7 @@
 export const getGeneration = async (prompt: string, temperature: number, heatMap: boolean, length: number) => {
 
     let url = "https://kalandjl-llm-from-scratch-api.hf.space/generate";
-    url = 'http://localhost:7860/generate'
+    url = 'http://localhost:7860/generate-stream'
 
     try {
         const response = await fetch(url, {
@@ -50,8 +50,8 @@ export const getGenerationStream = (
     const { prompt, temperature, length } = params;
 
     // Construct the URL with query parameters
-    let url = new URL("https://kalandjl-llm-from-scratch-api.hf.space/generate")
-    // url = new URL("http://localhost:7860/generate")
+    let url = new URL("https://kalandjl-llm-from-scratch-api.hf.space/generate-stream")
+    // url = new URL("http://localhost:7860/generate-stream")
 
     url.searchParams.append('prompt', prompt);
     url.searchParams.append('temperature', temperature.toString());

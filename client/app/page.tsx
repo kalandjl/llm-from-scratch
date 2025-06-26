@@ -1,7 +1,7 @@
 "use client"
 import HeatMap from "@/components/HeatMap";
 import { getGeneration, getGenerationStream } from "@/lib/model";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 
 export default function Home() {
 
@@ -25,6 +25,11 @@ export default function Home() {
 
         setHeatmap(data)
     }
+
+    useEffect(() => {
+
+        console.log(loading)
+    }, [loading])
 
     const handleCompletion = () => {
         console.log("Stream finished!");

@@ -7,7 +7,7 @@
 import numpy as np
 
 # Dataset: 'python-algorithms' git repo
-base_dataset = open("../data/requests.txt").read()
+base_dataset = open("data/requests.txt").read()
 
 # Get original character set and create encode/decode functions
 chars = sorted(list(set(base_dataset)))
@@ -34,7 +34,7 @@ def filter_text(text, allowed_chars):
 
 
 # Load and filter new dataset
-text = open("../data/python_fundamentals.txt").read()
+text = open("data/python_fundamentals.txt").read()
 filtered_text = filter_text(text, set(chars))  # Convert to set for faster lookup
 
 # Use filtered text for training
@@ -724,7 +724,7 @@ model = Model()
 
 
 # Load the saved weights
-loaded_weights = np.load('../models/my_model.npz')
+loaded_weights = np.load('models/my_model.npz')
 
 for key in loaded_weights.keys():
     print(key)
@@ -877,7 +877,6 @@ class LoRALayer():
 for transformer in model.transformers:
     for head in transformer.multi_head_attention_block.heads:
 
-
         # Rank and alpha variables for LoRA layers
         r = 8
         a = 1
@@ -886,7 +885,25 @@ for transformer in model.transformers:
         head.W_query = LoRALayer(head.W_query, r, a)
         head.W_value = LoRALayer(head.W_value, r, a)
 
-lora_weights = np.load('../models/my_model.npz')
+lora_weights = np.load('models/lora_weights.npz')
+
+# Load transformer weights
+for idx, transformer in enumerate(model.transformers):
+    print(f"Loading transformer {idx}...")
+
+    # Load attention head weights (16 heads each)
+    for index, attention_head in enumerate(transformer.multi_head_attention_block.heads):
+        attention_head.W_value.lora_A = Parameter(lora_weights[f"transform.{idx}.head.{index}.value.lora_A"])
+        attention_head.W_query.lora_B = Parameter(lora_weights[f"transform.{idx}.head.{index}.query.lora_B"])
+
+x_batch, y_batch = get_batch(data, 128, 34)
+
+
+# Calculate loss and probabilites
+logits = model.forward(x_batch)
+loss_initial, probabilities = model.calc_loss(logits, y_batch)
+
+print(loss_initial)
 
 
 def generate_text(prompt, temperature, heatMap, max_length):

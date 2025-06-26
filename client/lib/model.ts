@@ -50,7 +50,9 @@ export const getGenerationStream = (
     const { prompt, temperature, length } = params;
 
     // Construct the URL with query parameters
-    const url = new URL("http://localhost:7860/generate-stream");
+    let url = new URL("https://kalandjl-llm-from-scratch-api.hf.space/generate")
+    // url = new URL("http://localhost:7860/generate")
+
     url.searchParams.append('prompt', prompt);
     url.searchParams.append('temperature', temperature.toString());
     url.searchParams.append('length', length.toString());

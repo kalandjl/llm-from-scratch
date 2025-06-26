@@ -26,13 +26,9 @@ export default function Home() {
         setHeatmap(data)
     }
 
-    useEffect(() => {
-
-        console.log(loading)
-    }, [loading])
-
     const handleCompletion = () => {
         console.log("Stream finished!");
+        setDataLoading(false)
     };
 
     const handleError = (error: Error) => {
@@ -61,7 +57,6 @@ export default function Home() {
                 handleCompletion, 
                 handleError
             );           
-            setDataLoading(false)
             console.log(generation)
         } catch (err) {
             console.error("Failed to get generation:", err);
@@ -170,7 +165,7 @@ export default function Home() {
                 )}
             </div>
 
-            <div className="overflow-scroll px-32 aspect-square">
+            <div className="overflow-scroll px-32 aspect-square w-screen">
                 <HeatMap heatmapData={heatmap} tokens={generation.split("")} loading={dataLoading} />
             </div>
         </main>

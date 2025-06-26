@@ -2,7 +2,7 @@
 export const getGeneration = async (prompt: string, temperature: number, heatMap: boolean, length: number) => {
 
     let url = "https://kalandjl-llm-from-scratch-api.hf.space/generate";
-    url = 'http://localhost:7860/generate-stream'
+    // url = 'http://localhost:7860/generate-stream'
 
     try {
         const response = await fetch(url, {

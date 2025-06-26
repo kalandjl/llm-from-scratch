@@ -16,31 +16,13 @@ const HeatMap: FC<Props> = ({ heatmapData, tokens, loading }) => {
         return token;
     };
 
-    useEffect(() => {
-        console.log(loading)
-    }, [loading])
 
-    if (!heatmapData || heatmapData.length === 0 || !tokens || tokens.length === 0) {
-        return (
-        <div className="p-4 bg-yellow-100 border border-yellow-300 rounded-lg">
-            <p className="text-yellow-800">No heatmap data or tokens provided.</p>
-        </div>
-        );
-    }
 
-    if ((heatmapData.length !== tokens.length || heatmapData[0].length !== tokens.length) && loading===false) {
-        return (
-        <div className="p-4 bg-red-100 border border-red-300 rounded-lg">
-            <p className="text-red-800">
-            Mismatch between token count ({tokens.length}) and heatmap dimensions ({heatmapData.length}x{heatmapData[0].length}).
-            </p>
-        </div>
-        );
-    }
+    if (heatmapData.length === 1) return (<></>)
 
     if (loading) {
         return (
-            <div className="flex items-center justify-center">
+            <div className="flex items-center justify-center py-16">
                 <div className="h-6 w-6 border-4 border-t-transparent border-white rounded-full animate-spin" />
             </div>
         )

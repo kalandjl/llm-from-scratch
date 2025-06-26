@@ -6,3 +6,25 @@ While my model doesn't rely on libraries to take on the complexity of modern LLM
 
 ## Hugging Face Repository
 https://huggingface.co/spaces/kalandjl/leanai-gradio/tree/main
+
+## How to use it 
+First of all, clone the git repo:
+```
+git clone https://www.github.com/kalandjl/llm-from-scratch
+```
+
+### Notebooks
+My main training logic was implemented in model.ipynb, where the base model was trained and exported. However, I would recommend you use the lora.ipynb, which as it preloads the weights from the /models directory. If you don't want to use the lora implementation, just remove the cell which replaces my original W_query and W_value layers with LoRALayer. To use any of the notebooks, ensure jupyter is installed, and run 
+```
+jupyter notebook
+```
+### Front end
+To use my front end environement, first enter the working directory and install deps
+```
+cd client
+npm install
+```
+Then, start the Next.JS server
+```
+npm run dev
+```

@@ -6,7 +6,7 @@ While my model doesn't rely on libraries to take on the complexity of modern LLM
 
 ## Training 
 Here's the training schedule of my base model. This took over 24 hours!
-![alt text]("images/ss_1.png")
+![alt text](images/ss_1.png)
 This model achieved a cross entropy loss of 0.6. While this doesnt translate directly into accuracy, we can estimate by taking e^-0.6,
 which is roughly 54.9%. 
 

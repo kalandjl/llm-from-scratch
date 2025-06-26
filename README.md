@@ -10,6 +10,9 @@ Here's the training schedule of my base model. This took over 24 hours!
 This model achieved a cross entropy loss of 0.6. While this doesnt translate directly into accuracy, we can estimate by taking e^-0.6,
 which is roughly 54.9%. 
 
+## Model Interface
+Being a front end devloper, leaving the model as just a notebook didn't feel right. I decided to make a Next.JS app where any user could prompt the model, adjust it's temperature and generation length, and see it's attention "heatmap". Implemented this was fairly simple, and HuggingFace worked amazingly as a deployment container for my heavy model logic. This gave me space to focus on the UI; check out some of the photos below
+
 ## Hugging Face Repository
 https://huggingface.co/spaces/kalandjl/leanai-gradio/tree/main
 

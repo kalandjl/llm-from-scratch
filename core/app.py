@@ -1,5 +1,5 @@
 # Dataset: source code for 'requests' python libraray
-text = open("../data/requests.txt").read()
+text = open("data/requests.txt").read()
 
 import numpy as np
 
@@ -537,7 +537,7 @@ logits = model.forward([[stoi['a'], stoi['p']]])
 model.pred([int(stoi['r'])])
 
 # Load the saved weights
-loaded_weights = np.load('model/my_model.npz')
+loaded_weights = np.load('models/my_model.npz')
 
 for key in loaded_weights.keys():
     print(key)
@@ -663,4 +663,43 @@ async def predict_image(data: ReqData):
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to get model generation: {e}")
 
-    return {"generation": generation}
+    return {
+        "generation": generation,
+    }
+
+from starlette.responses import StreamingResponse 
+import asyncio
+
+@app.get("/generate-stream")
+async def stream_generation(prompt: str, temperature: float, length: int):
+
+    model.temperature = temperature
+
+    # Chars from string to int data that model can process
+    char_indices = encode(prompt)
+
+    async def event_generator():
+
+        yield f"data: {prompt}\n\n"
+
+        for _ in range(int(length)):
+
+            # Get new prediction
+            context = char_indices[-1000:]
+            next_char_index = model.pred(context)
+
+            char_indices.append(next_char_index)
+
+            next_char = itos[next_char_index]
+
+            yield f"data: {next_char}\n\n"
+
+            # Prevent blocking in server event loop
+            await asyncio.sleep(0.01)
+
+        print(decode(char_indices))
+        print("".join(decode(char_indices)))
+        # Final message after generation is done
+        yield "data: [DONE]\n\n"
+    
+    return StreamingResponse(event_generator(), media_type="text/event-stream")

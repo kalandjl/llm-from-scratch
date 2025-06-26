@@ -1,10 +1,10 @@
 "use client"
-import { getGeneration } from "@/lib/model";
+import { getGeneration, getGenerationStream } from "@/lib/model";
 import { FormEvent, useState } from "react";
 
 export default function Home() {
 
-    const [generation, setGeneration] = useState<string | undefined>();
+    const [generation, setGeneration] = useState<string>(``);
     const [prompt, setPrompt] = useState<string>("");
     const [temperature, setTemperature] = useState<number>(0.7);
     const [heatMap, setHeatMap] = useState<boolean>(false);
@@ -12,18 +12,40 @@ export default function Home() {
     const [loading, setLoading] = useState<boolean>(false);
     const [error, setError] = useState<string | undefined>();
 
+    const handleData = (chunk:string) => {
+
+        const cleaned = chunk.replace(/\\n/g, "\n");
+        setGeneration(prevGeneration => `${prevGeneration}${cleaned}`);
+    }
+
+    const handleCompletion = () => {
+        console.log("Stream finished!");
+    };
+
+    const handleError = (error: Event) => {
+        console.error("Stream failed:", error);
+    };
+
     // Handle form submission asynchronously
     const handleSubmit = async (e: FormEvent) => {
         e.preventDefault(); // Prevent page from reloading
+
         if (loading || !prompt) return;
 
         setLoading(true);
         setError(undefined);
-        setGeneration(undefined);
+        setGeneration(``);
+
+
 
         try {
-            const result = await getGeneration(prompt, temperature, heatMap, length);
-            setGeneration(result);
+            getGenerationStream(
+                {prompt: prompt, temperature: temperature, length: length}, 
+                handleData, 
+                handleCompletion, 
+                handleError
+            );           
+            console.log(generation)
         } catch (err) {
             console.error("Failed to get generation:", err);
             setError("Sorry, something went wrong. Please try again.");

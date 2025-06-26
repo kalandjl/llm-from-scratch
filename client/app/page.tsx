@@ -1,6 +1,7 @@
 "use client"
 import HeatMap from "@/components/HeatMap";
 import { getGeneration, getGenerationStream } from "@/lib/model";
+import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 
 export default function Home() {
@@ -68,7 +69,12 @@ export default function Home() {
 
     return (
         <main className="grid min-h-screen items-center justify-center bg-gray-900 p-4 text-white">
-            <div className="px-64">
+            <div className="grid place-items-center py-5">
+                <Link href="https://www.github.com/kalandjl/llm-from-scratch" className="text-blue-400 underline font-bold">
+                    Check out the git repo!
+                </Link>
+            </div>
+            <div className="lg:px-64 md:px-32 sm:px-5 px-5">
                 <div className="rounded-xl bg-gray-800 p-8 shadow-lg">
                     <h1 className="mb-6 text-center text-3xl font-bold">AI Python Code Generator</h1>
 

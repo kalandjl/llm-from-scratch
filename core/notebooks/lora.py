@@ -886,18 +886,19 @@ for transformer in model.transformers:
         head.W_query = LoRALayer(head.W_query, r, a)
         head.W_value = LoRALayer(head.W_value, r, a)
 
-lora_weights = np.load('../models/my_model.npz')
+
+# In[18]:
 
 
 def generate_text(prompt, temperature, heatMap, max_length):
     print(f"Generating with prompt: '{prompt}', temp: {temperature}, length: {max_length}")
-    
+
     if not prompt:
         prompt = "\n" # Default prompt
 
     # Set the model's temperature for this specific generation
     model.temperature = temperature
-    
+
     # Encode the prompt and generate
     char_indices = encode(prompt)
     for _ in range(int(max_length)):
@@ -905,111 +906,146 @@ def generate_text(prompt, temperature, heatMap, max_length):
         context = char_indices[-1000:]
         next_char_index = model.pred(context)
         char_indices.append(next_char_index)
-        
+
     # Decode the final list of indices into a string
     generated_text = decode(char_indices)
     return generated_text
 
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
 
-app = FastAPI()
-
-port=7860
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-from pydantic import BaseModel
-
-# Define request body
-class ReqData(BaseModel):
-    prompt: str
-    temperature: float
-    heatMap: bool
-    length: int
+# In[19]:
 
 
-# Root endpoint
-@app.get("/")
-def root():
-    return {"message": "Model is live!"}
+import matplotlib.pyplot as plt
+from IPython import display
 
-@app.post("/generate")
-async def predict_image(data: ReqData):
+# Training hyperparameters
+max_iters = 5000
+base_lr = 3e-4
+max_lr = 3e-4
+min_lr = 3e-5
+use_linear=True
+use_cosine=False
+warmup_steps = 100
+batch_size = 32
+block_size = 64
 
-    prompt = data.prompt
-    temperature = data.temperature
-    heatMap = data.heatMap
-    length = data.length
+np.seterr(all='ignore')
 
-    try:
-        generation = generate_text(prompt, temperature, heatMap, length)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to get model generation: {e}")
+# Plotting Initialization
+step_plot_losses = []
+plot_losses = []
+fig, ax = plt.subplots()
 
-    return {
-        "generation": generation,
-    }
 
-from starlette.responses import StreamingResponse 
-import asyncio
+# In[20]:
 
-import json
 
-@app.get("/generate-stream")
-async def stream_generation(prompt: str, temperature: float, length: int):
+print("Training model")
+# Training loop
+for step in range(max_iters):
 
-    print(len(prompt)+length)
+    if step < warmup_steps:
+        # Linear warmup (same for all schedules)
+        current_lr = max_lr * (step + 1) / warmup_steps
+    else:
+        if use_cosine:
 
-    model.temperature = temperature
+            # Cosine decay
+            decay_ratio = (step - warmup_steps) / (max_iters - warmup_steps)
+            cosine_output = 0.5 * (1 + np.cos(np.pi * decay_ratio))
+            current_lr = min_lr + (max_lr - min_lr) * cosine_output
+        elif use_linear:
 
-    # Chars from string to int data that model can process
-    char_indices = encode(prompt)
+            # Linear decay
+            decay_ratio = (step - warmup_steps) / (max_iters - warmup_steps)
+            current_lr = max_lr - (max_lr - min_lr) * decay_ratio
+        else:
+            # Constant learning rate
+            current_lr = base_lr
 
-    async def event_generator():
-        # Send the initial prompt and its tokenized version
-        initial_event = {"event": "prompt", "data": {"prompt": prompt, "tokens": list(prompt)}}
-        yield f"data: {json.dumps(initial_event)}\n\n"
+        decay_ratio = (step - warmup_steps) / (max_iters - warmup_steps)
+        current_lr = max_lr - (max_lr - min_lr) * decay_ratio        
 
-        generated_chars = []
-        for _ in range(int(length)):
-            # Get new prediction
-            context = char_indices[-1000:]
-            next_char_index = model.pred(context)
+    # Get a mini-batch of data
+    x_batch, y_batch = get_batch(data, batch_size, block_size)
 
-            char_indices.append(next_char_index)
-            next_char = itos[next_char_index]
-            generated_chars.append(next_char)
+    # Calculate loss and probabilites
+    logits = model.forward(x_batch)
+    loss_initial, probabilities = model.calc_loss(logits, y_batch)
 
-            # Stream each generated token as a JSON object
-            token_event = {"event": "token", "data": next_char}
-            yield f"data: {json.dumps(token_event)}\n\n"
+    plot_losses.append(loss_initial)
 
-            # Prevent blocking in server event loop
-            await asyncio.sleep(0.01)
 
-        _ = model.forward(encode(prompt + ''.join(generated_chars)))
+    # Backward Pass
+    one_hot_array = np.eye(len(chars))[y_batch]
+    initial_gradient = probabilities - one_hot_array
 
-        all_attentions = []
-        print("Calculating heatmap...")
+    model.backward(initial_gradient)
 
-        for transformer in model.transformers:
-            for head in transformer.multi_head_attention_block.heads:
-                # Based on your finding, this line is correct:
-                attention_matrix = head.cache['attn_weights'][0]
-                all_attentions.append(attention_matrix)
+    # Optimizer
+    model.optimizer(current_lr)
 
-        for attn in all_attentions:
-            np.fill_diagonal(attn, 0)
+    if step % 5 == 0:
 
-        heatmap = (np.mean(np.array(all_attentions), axis=0) * 5).tolist() 
+        step_plot_losses.append(np.mean(plot_losses[-1-step:-1]))
 
-        final_event = {"event": "end", "heatmap": heatmap}
-        yield f"data: {json.dumps(final_event)}\n\n"
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
+        print(f"Step {step}, Loss: {loss_initial}")
+
+        # Graph plot
+        display.clear_output(wait=True)
+        ax.clear()
+        ax.plot(step_plot_losses)
+        ax.set_title("Training Loss Over Time")
+        ax.set_xlabel("Steps")
+        ax.set_ylabel("Loss")
+        if step_plot_losses[-1] < 4:
+            if loss_initial < 2:
+                ax.set_ylim(top=2) # cut off loses higher than 2
+            else:
+                ax.set_ylim(top=4) # cut off loses higher than 4
+        display.display(fig)
+
+# Final clear to show the last plot cleanly
+display.clear_output(wait=True)
+ax.clear()
+ax.plot(step_plot_losses)
+ax.set_title("Final Training Loss")
+ax.set_xlabel("Steps")
+ax.set_ylabel("Loss")
+
+print(f"Model loss: {model.loss}")
+
+
+# In[26]:
+
+
+generate_text("def", 1.0, True, 100)
+
+
+# In[22]:
+
+
+# After training, collect LoRA weights
+lora_weights = {}
+
+for transformer_idx, transformer in enumerate(model.transformers):
+    for head_idx, head in enumerate(transformer.multi_head_attention_block.heads):
+
+        # Check if it's a LoRA layer and collect A and B matrices
+        if hasattr(head.W_query, 'lora_A'):
+            lora_weights[f"transform.{transformer_idx}.head.{head_idx}.query.lora_A"] = head.W_query.lora_A.data
+            lora_weights[f"transform.{transformer_idx}.head.{head_idx}.query.lora_B"] = head.W_query.lora_B.data
+
+        if hasattr(head.W_value, 'lora_A'):
+            lora_weights[f"transform.{transformer_idx}.head.{head_idx}.value.lora_A"] = head.W_value.lora_A.data
+            lora_weights[f"transform.{transformer_idx}.head.{head_idx}.value.lora_B"] = head.W_value.lora_B.data
+
+# Save the LoRA weights
+np.savez_compressed('../models/lora_weights.npz', **lora_weights)
+
+
+# In[ ]:
+
+
+
+

@@ -1,4 +1,5 @@
 "use client"
+import HeatMap from "@/components/HeatMap";
 import { getGeneration, getGenerationStream } from "@/lib/model";
 import { FormEvent, useState } from "react";
 
@@ -11,6 +12,8 @@ export default function Home() {
     const [length, setLength] = useState<number>(100);
     const [loading, setLoading] = useState<boolean>(false);
     const [error, setError] = useState<string | undefined>();
+    const [heatmap, setHeatmap] = useState<number[][]>([[]])
+    const [dataLoading, setDataLoading] = useState<boolean>(false)
 
     const handleData = (chunk:string) => {
 
@@ -18,11 +21,16 @@ export default function Home() {
         setGeneration(prevGeneration => `${prevGeneration}${cleaned}`);
     }
 
+    const handleHeatMap = (data: number[][]) => {
+
+        setHeatmap(data)
+    }
+
     const handleCompletion = () => {
         console.log("Stream finished!");
     };
 
-    const handleError = (error: Event) => {
+    const handleError = (error: Error) => {
         console.error("Stream failed:", error);
     };
 
@@ -39,12 +47,16 @@ export default function Home() {
 
 
         try {
+
+            setDataLoading(true)
             getGenerationStream(
                 {prompt: prompt, temperature: temperature, length: length}, 
                 handleData, 
+                handleHeatMap,
                 handleCompletion, 
                 handleError
             );           
+            setDataLoading(false)
             console.log(generation)
         } catch (err) {
             console.error("Failed to get generation:", err);
@@ -55,8 +67,8 @@ export default function Home() {
     };
 
     return (
-        <main className="flex min-h-screen items-center justify-center bg-gray-900 p-4 text-white">
-            <div className="w-full max-w-2xl">
+        <main className="grid min-h-screen items-center justify-center bg-gray-900 p-4 text-white">
+            <div className="px-64">
                 <div className="rounded-xl bg-gray-800 p-8 shadow-lg">
                     <h1 className="mb-6 text-center text-3xl font-bold">AI Python Code Generator</h1>
 
@@ -104,7 +116,7 @@ export default function Home() {
                                     type="range"
                                     id="length-input"
                                     min="10"
-                                    max="1000"
+                                    max="250"
                                     step="10"
                                     className="w-full"
                                     value={length}
@@ -151,6 +163,10 @@ export default function Home() {
                         <p className="mt-4 whitespace-pre-wrap text-gray-200">{generation}</p>
                     </div>
                 )}
+            </div>
+
+            <div className="overflow-scroll px-32 aspect-square">
+                <HeatMap heatmapData={heatmap} tokens={generation.split("")} loading={dataLoading} />
             </div>
         </main>
     );

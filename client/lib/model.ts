@@ -40,33 +40,59 @@ interface Params {
 }
 
 // Using an http stream, make a constant generation from the llm
-export const getGenerationStream = (params: Params, onData: (chunk: string) => void, onComplete: () => void, onError: (error: Event) => void) => {
+export const getGenerationStream = (
+    params: Params, 
+    onData: (chunk: string) => void, 
+    onHeatMap: (data: number[][]) => void, 
+    onComplete: () => void, 
+    onError: (error: Error) => void
+) => {
+    const { prompt, temperature, length } = params;
 
-    const { prompt, temperature, length } = params
+    // Construct the URL with query parameters
+    const url = new URL("http://localhost:7860/generate-stream");
+    url.searchParams.append('prompt', prompt);
+    url.searchParams.append('temperature', temperature.toString());
+    url.searchParams.append('length', length.toString());
 
-    const url = new URL("http://localhost:7860/generate-stream")
+    // Create a new EventSource to connect to the stream
+    const eventSource = new EventSource(url.toString());
 
-    url.searchParams.append('prompt', prompt)
-    url.searchParams.append('temperature', temperature.toString())
-    url.searchParams.append('length', length.toString())
-
-    const eventSource = new EventSource(url)
-
+    // Handle incoming messages from the server
     eventSource.onmessage = (event) => {
+        // Parse the JSON data from the event
+        const message = JSON.parse(event.data);
 
-        if (event.data === "[DONE]") { 
-            eventSource.close()
-            onComplete()
-        } else {
-            onData(event.data)
+        // Process the message based on its 'event' type
+        switch (message.event) {
+            case 'prompt':
+                // This event contains the initial prompt, you can use it if needed
+                console.log("Received prompt:", message.data.prompt);
+                // We will use onData to display the initial prompt tokens
+                onData(message.data.tokens.join(""));
+                break;
+            
+            case 'token':
+                // This event contains a single generated character
+                onData(message.data);
+                break;
+
+            case 'end':
+                // This is the final event, containing the heatmap
+                console.log("Stream finished.");
+                onHeatMap(message.heatmap);
+                onComplete();
+                eventSource.close(); // Close the connection
+                break;
         }
-    }
+    };
 
+    // Handle any errors with the connection
     eventSource.onerror = (err) => {
-        console.error("EventSource ecountered an error:", err)
-        eventSource.close()
-        onError(err)
-    }
+        console.error("EventSource encountered an error:", err);
+        eventSource.close();
+    };
 
-    return eventSource
-}
+    // Return the eventSource instance so it can be managed (e.g., closed manually)
+    return eventSource;
+};

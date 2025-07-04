@@ -6,7 +6,7 @@ While my model doesn't rely on libraries to take on the complexity of modern LLM
 
 ## Training 
 
-My model was trained on the source code for the `requests` python library - which is arround 10,000 lines in size - with the goal of making a model that would generate code resembling text.
+My model was trained on the source code for the `requests` python library - which is arround 10,000 lines in size - with the goal of making a model that would generate text resembling code.
 
 Here's the training schedule of my base model. This took over 24 hours!
 ![alt text](images/ss_1.png)

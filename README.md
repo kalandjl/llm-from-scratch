@@ -28,7 +28,7 @@ git clone https://www.github.com/kalandjl/llm-from-scratch
 ```
 
 ### Notebooks
-My main training logic was implemented in model.ipynb, where the base model was trained and exported. However, I would recommend you use the lora.ipynb, which as it preloads the weights from the /models directory. If you don't want to use the lora implementation, just remove the cell which replaces my original W_query and W_value layers with LoRALayer. To use any of the notebooks, ensure jupyter is installed, and run 
+My main training logic was implemented in model.ipynb, where the base model was trained and exported. However, I would recommend you use the lora.ipynb, as it preloads the weights from the /models directory. If you don't want to use the lora implementation, just remove the cell which replaces my original W_query and W_value layers with LoRALayer. To use any of the notebooks, ensure jupyter is installed, and run 
 ```
 jupyter notebook
 ```

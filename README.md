@@ -22,7 +22,7 @@ Being a front end devloper, leaving the model as just a notebook didn't feel rig
 
 
 ## Hugging Face Repository
-https://huggingface.co/spaces/kalandjl/leanai-gradio/tree/main
+https://huggingface.co/spaces/kalandjl/llm-from-scratch-api/tree/main
 
 ## How to use it 
 First of all, clone the git repo:

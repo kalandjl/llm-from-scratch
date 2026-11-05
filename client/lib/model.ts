@@ -93,6 +93,7 @@ export const getGenerationStream = (
     eventSource.onerror = (err) => {
         console.error("EventSource encountered an error:", err);
         eventSource.close();
+        onError(new Error("Connection to the model was lost. Please try again."));
     };
 
     // Return the eventSource instance so it can be managed (e.g., closed manually)

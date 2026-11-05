@@ -47,8 +47,7 @@ export default function About() {
           <p className="text-sm text-zinc-500">About</p>
           <h1 className="mt-1 text-3xl font-semibold tracking-tight text-zinc-50">LLM From Scratch</h1>
           <p className="mt-4 leading-relaxed text-zinc-400">
-            I&apos;m a computing student specializing in AI, with minors in statistics and philosophy. I&apos;ve been programming
-            since I was nine. This project is a GPT-style language model I wrote without PyTorch or TensorFlow. Every layer, every
+            I&apos;m a Computing and Mathematics (COMA) student at Queen&apos;s University, minoring in statistics and philosophy. This project is a GPT-style language model I wrote without PyTorch or TensorFlow. Every layer, every
             gradient and the training loop are implemented in NumPy.
           </p>
         </header>

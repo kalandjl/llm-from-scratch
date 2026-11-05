@@ -67,12 +67,20 @@ export default function Home() {
             <div className="mx-auto w-full max-w-2xl">
                 <div className="mb-8 flex items-center justify-between">
                     <h1 className="text-2xl font-semibold tracking-tight text-zinc-50">AI Python Code Generator</h1>
-                    <Link
-                        href="https://www.github.com/kalandjl/llm-from-scratch"
-                        className="rounded-full border border-white/10 px-3 py-1.5 text-xs font-medium text-zinc-300 transition hover:border-white/25 hover:text-zinc-50"
-                    >
-                        Check out the git repo!
-                    </Link>
+                    <div className="flex items-center gap-2">
+                        <Link
+                            href="/about"
+                            className="rounded-full px-3 py-1.5 text-xs font-medium text-zinc-400 transition hover:text-zinc-50"
+                        >
+                            About
+                        </Link>
+                        <Link
+                            href="https://www.github.com/kalandjl/llm-from-scratch"
+                            className="rounded-full border border-white/10 px-3 py-1.5 text-xs font-medium text-zinc-300 transition hover:border-white/25 hover:text-zinc-50"
+                        >
+                            Check out the git repo!
+                        </Link>
+                    </div>
                 </div>
 
                 <div className="rounded-2xl border border-white/[0.08] bg-zinc-900/60 p-6 sm:p-8">
